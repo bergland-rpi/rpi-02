@@ -15,6 +15,7 @@ import subprocess
 import smtplib
 from shutil import copyfile
 import filecmp
+import os.path
 
 #arguments will be in a separate .ini file (sys.argv[1]) which is read in and parsed to get different argument types
 inputfile=str(sys.argv[1]) #the input .ini file is given as the first argument when the python script is called
@@ -94,7 +95,7 @@ def writeHeader(WRTR, C):    #write a header column in master file
     C.flush()
 
 configpath=inputfile
-configcopy=inputfile+time.strftime("%Y-%m-%d")+"copy.log"
+configcopy=hostname+"-config-"+time.strftime("%Y-%m-%d")+"-copy.log"
 copyfile(configpath, configcopy)
 
 #read input file on first time through program and configure
@@ -116,7 +117,8 @@ strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT, 
 strip.begin()
 
 #generate data files
-c=makeOutFile(a["outfile_name"])
+outfile_name=hostname+"-restart-"+time.strftime("%Y-%m-%d")+".csv"
+c=makeOutFile(outfile_name)
 wrtr=makeOutWriteable(c)
 writeHeader(wrtr, c)
 #determine program start time with current configuration
@@ -133,8 +135,8 @@ while True:
     old=open(configcopy,"r").read()
     if new != old: #reset everything if configuration file has changed
         print "resetting"
-        email_text=hostname+"has started a new program"+new
-        email_subject=hostname+"has reset"
+        email_text=hostname+" has started a new program: "+ new
+        email_subject=hostname+" has reset"
         send_email("priscilla.erickson@gmail.com", email_subject, email_text)
         a=readInput(inputfile)
         convertInt(a,intlist)
@@ -146,7 +148,8 @@ while True:
         configcopy=inputfile+time.strftime("%Y-%m-%d")+"copy.log"
         copyfile(configpath,configcopy)
         programstart=time.time()
-        c=makeOutFile(a["outfile_name"])
+        outfile_name=hostname+"-restart-"+time.strftime("%Y-%m-%d")+".csv"
+        c=makeOutFile(outfile_name)
         wrtr=makeOutWriteable(c)
         writeHeader(wrtr, c)
         hasAlarmed=False
@@ -169,14 +172,25 @@ while True:
     time_in_hours=hour+minute/60+second/3600
 
     #make a daily file if needed right after midnight when day counter has turned over
-    if lastday != day:
-        todaysdate=time.strftime("%Y-%m-%d", now)
-        dailyfilename=hostname+"-"+todaysdate+".csv"
+    todaysdate=time.strftime("%Y-%m-%d", now)
+    dailyfilename=hostname+"-"+todaysdate+".csv" 
+    if lastday == 0 and os.path.isfile(dailyfilename)==False : #program is starting for first time and file doesn't exist; make new file
         df =(open(dailyfilename, 'wb'))
         dfwrtr = csv.writer(df)
         dfwrtr.writerow(["TimeStamp", "Elapsed", "MCP9808Temp", "SHT31Temp", "Humidity", "Lux", "Lights", "Time_in_hours", "R", "G", "B", "W", "Heater"])
         df.flush()
-
+    elif lastday == 0 and os.path.isfile(dailyfilename) == True :#program is starting but file already exists; append
+        df =(open(dailyfilename, 'a'))
+        dfwrtr = csv.writer(df)
+    elif lastday != day :#day has turned over; make a new file
+        df=(open(dailyfilename, 'wb'))
+        dfwrtr = csv.writer(df)
+        dfwrtr.writerow(["TimeStamp", "Elapsed", "MCP9808Temp", "SHT31Temp", "Humidity", "Lux", "Lights", "Time_in_hours", "R", "G", "B", "W", "Heater"])
+        df.flush()
+    else:
+        df =(open(dailyfilename, 'a'))
+        dfwrtr = csv.writer(df)
+    
     #turn heat on if needed
     if a["Heat"] == "True" and a["heatOn"] <= time_in_hours < a["heatOff"]:
         GPIO.output(23, True)
@@ -205,8 +219,8 @@ while True:
         print 'Current temp=', currtemp
         print 'High Alarm=', a["highAlarm"]
         print 'Low Alarm=', a["lowAlarm"]
-        subject=hostname+ "has a temperature problem"
-        message=hostname+ "has a temperature of " + str(currtemp)
+        subject=hostname+ " has a temperature problem"
+        message=hostname+ " has a temperature of " + str(currtemp)
         send_email("priscilla.erickson@gmail.com", subject, message)
         print "Email sent"
         hasAlarmed=True
